@@ -16,7 +16,7 @@ typedef struct
 } complex_t;
 
 
-void complex_multiply(complex_t *result, complex_t *a, complex_t *b)
+void complex_multiply(complex_t *result, const complex_t *a, const complex_t *b)
 {
 	complex_t temp;
 
@@ -143,18 +143,18 @@ void imatrix_multiply(complex_t *result, const complex_t *matrix, const complex_
 
 void filter(float *x, float *h, complex_t *m)
 {
-	complex_t x1[36], x2[36], x3[36];
-	complex_t y1[36], y2[36], y3[36];
+	complex_t x1[16], x2[16], x3[16];
+	complex_t y1[16], y2[16], y3[16];
 	complex_t h_complex[16];
 	complex_t impulse[16];
 	int i;
 
-	memset(&x1, 0, sizeof(complex_t) * 36);
-	memset(&x2, 0, sizeof(complex_t) * 36);
-	memset(&x3, 0, sizeof(complex_t) * 36);
-	memset(&y1, 0, sizeof(complex_t) * 36);
-	memset(&y2, 0, sizeof(complex_t) * 36);
-	memset(&y3, 0, sizeof(complex_t) * 36);
+	memset(&x1, 0, sizeof(complex_t) * 16);
+	memset(&x2, 0, sizeof(complex_t) * 16);
+	memset(&x3, 0, sizeof(complex_t) * 16);
+	memset(&y1, 0, sizeof(complex_t) * 16);
+	memset(&y2, 0, sizeof(complex_t) * 16);
+	memset(&y3, 0, sizeof(complex_t) * 16);
 	memset(&h_complex, 0, sizeof(complex_t) * 16);
 	memset(&impulse, 0, sizeof(complex_t) * 16);
 
@@ -165,9 +165,9 @@ void filter(float *x, float *h, complex_t *m)
 		if (i < 10)
 			x1[i].real = x[i];
 		if (i >= 10 && i < 20)
-			x2[i].real = x[i];
+			x2[i-10].real = x[i];
 		if (i >= 20 && i < 30)
-			x3[i].real = x[i];
+			x3[i-20].real = x[i];
 	}
 
 	for(i = 0; i < M; i++)
@@ -189,29 +189,33 @@ void filter(float *x, float *h, complex_t *m)
 		complex_multiply(&y3[i], &y3[i], &impulse[i]);
 	}
 
+
+
 	imatrix_multiply(x1, m, y1, N);
 	imatrix_multiply(x2, m, y2, N);
 	imatrix_multiply(x3, m, y3, N);
 
-	for(i = 0; i < N; i++)
-	{
-//		printf("x1[%d] = (%f, %f)\n", i,  x1[i].real, x1[i].imag);
-//		printf("y1[%d] = (%f, %f)\n", i,  y1[i].real, y1[i].imag);
-	}
 
-	for(i = 0; i < 30; i++)
+	for(i = 0; i < 36; i++)
 	{
 		if ( i < 10)
 			x[i] = x1[i].real;
 		else if (i < 16)
-			x[i] = x1[i].real + x2[i].real;
+			x[i] = x1[i].real + x2[i-10].real;
 		else if ( i < 20)
-			x[i] = x2[i].real;
+			x[i] = x2[i-10].real;
 		else if (i < 26)
-			x[i] = x2[i].real + x3[i].real;
+			x[i] = x2[i-10].real + x3[i-20].real;
 		else
-			x[i] = x3[i].real;
+			x[i] = x3[i-20].real;
 	}
+
+
+	for(i = 0; i < 36; i++)
+	{
+		printf("x[%d] = %f\n", i, x[i]);
+	}
+
 }
 
 
@@ -219,7 +223,7 @@ int main(void)
 {
 	complex_t	omega[(N-1)*(N-1)];
 	complex_t	m[N*N];
-	float		x[30];
+	float		x[36] = {0};
 	int		i;
 
 	printf("calculating omega\n");
@@ -234,10 +238,6 @@ int main(void)
 
 	printf("filtering\n");
 	filter(&x[0], &h[0], &m[0]);
-	for(i = 0; i < 30; i++)
-	{
-		printf("x[i] = %f\n", x[i]);
-	}
 	
 	return 0;
 }
