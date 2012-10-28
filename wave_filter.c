@@ -9,10 +9,12 @@
 #define MY_PI 3.14159265359f
 #define N 16
 #define M 7
+#define FREQUENCY 8000
+#define NUM_SAMPLES (FREQUENCY * 10)
 
-#define NUM_SAMPLES (44100 * 30)
 
-float h[M] = {	0.0567f, 0.1560f, 0.2394f, 0.2719f, 0.2394f, 0.1560f, 0.0567f };
+//least squares low pass, pass <1khz stop >2khz
+float h[M] = {	0.0498f, 0.0516f, 0.0528f, 0.0531f, 0.0528f, 0.0516f, 0.0498f };
 
 
 typedef struct
@@ -24,6 +26,8 @@ typedef struct
 	short	align;
 	short	sample_size;
 } wave_t;
+void play_wave(wave_t *format, char *data, int length);
+
 
 typedef struct
 {
@@ -107,6 +111,110 @@ void fill_matrix(complex_t *m, complex_t *omega, int n)
 	}
 }
 
+void dial_digit(short int *s_pcm, char digit, float time)
+{
+	int		f1 = 350;
+	int		f2 = 440;
+	float	t = 0;
+	wave_t	wave;
+	int i;
+
+	wave.format = 1;
+	wave.channels = 1;
+	wave.sample_rate = 8000;
+	wave.avg_sample_rate = 8000 * 1;
+	wave.align = 2;
+	wave.sample_size = 16;
+
+    if (digit == '1')
+	{
+        f1 = 1209;
+        f2 = 697;
+    }
+    if (digit == '2')
+	{
+        f1 = 1336;
+        f2 = 697;
+    }
+    if (digit == '3')
+	{
+        f1 = 1447;
+        f2 = 697;
+    }
+    if (digit == '4')
+	{
+        f1 = 1209;
+        f2 = 770;
+    }
+    if (digit == '5')
+	{
+        f1 = 1336;
+        f2 = 770;
+    }
+    if (digit == '6')
+	{
+        f1 = 1447;
+        f2 = 770;
+    }
+    if (digit == '7')
+	{
+        f1 = 1209;
+        f2 = 852;
+    }
+    if (digit == '8')
+	{
+        f1 = 1336;
+        f2 = 852;
+    }
+    if (digit == '9')
+	{
+        f1 = 1447;
+        f2 = 852;
+    }
+    if (digit == '0')
+	{
+        f1 = 1209;
+        f2 = 941;
+	}
+    if (digit == '#')
+	{
+        f1 = 1447;
+        f2 = 941;
+	}
+
+    for (i = 0; i < 8000 * time; i++)
+	{
+        s_pcm[i] = (0.5 * sin(2 * 3.14159 * f1 * t) + 0.5 * sin (2 * 3.14159 * f2 * t)) * 32767;
+        t = t + 0.001;
+	}
+}
+
+void dial_num(short int *s_pcm, float dial_time, char *phone_num)
+{
+	int i = 0;
+
+    for (i = 0; i < strlen(phone_num); i++)
+	{
+        switch (phone_num[i])
+		{
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+		case '*':
+		case '#':
+            dial_digit(&s_pcm[(int)(i * 8000 * dial_time)], phone_num[i], dial_time);
+		}
+	}
+
+}
+
 
 void generate_samples(float *x, int offset, int n)
 {
@@ -114,8 +222,8 @@ void generate_samples(float *x, int offset, int n)
 
 	for(i = 1 + offset; i <= n + offset; i++)
 	{
-		float t = i * (2 * MY_PI / 8000);
-		x[i - offset - 1] = (float)sin(2.0f * MY_PI * 800 * t) / 2.0f + (float)sin(2.0f * MY_PI * 1400 * t) / 2.0f;
+		float t = i * (2 * MY_PI / FREQUENCY);
+		x[i - offset - 1] = 0.1f * (float)sin(2.0f * MY_PI * 440.0 * t) + 0.1f * (float)sin(2.0f * MY_PI * 350.0 * t);
 
 //		printf("x[i] = %f\n", x[i-1]);
 	}
@@ -293,30 +401,39 @@ void play_wave(wave_t *format, char *data, int length)
 	waveOutPrepareHeader(hWaveOut, &wavehdr, sizeof(WAVEHDR));
 
 	waveOutWrite(hWaveOut, &wavehdr, sizeof(WAVEHDR));
-	Sleep( 1000 * length / (format->sample_rate * format->channels * (format->sample_size / 8)) + 1);
+	Sleep( 1000 * length / (format->sample_rate * format->channels * (format->sample_size / 8)));
+	waveOutClose(hWaveOut);
 }
+
+short int	x_pcm[NUM_SAMPLES];
+short int	y_pcm[NUM_SAMPLES];
+float			x[NUM_SAMPLES] = {0.0f};
+float			y[NUM_SAMPLES + 6] = {0.0f};
+
 
 int main(void)
 {
 	complex_t		omega[(N-1)*(N-1) + 1];
 	complex_t		m[N*N];
-	int			i, j;
+	int				i;
 	wave_t			wave;
-	unsigned short int	x_pcm1[30];
-	unsigned short int	x_pcm2[30];
-	unsigned short int *x_pcm = x_pcm1;
-	unsigned short int *x_old = x_pcm2;
-	unsigned short int *temp;
-	float			x[30] = {0.0f};
-	float			y[36] = {0.0f};
+	char phone_num[] = "19408916875";
+	short int *s_pcm;
+	float dial_time = 0.8;
+
 
 	wave.format = 1;
 	wave.channels = 1;
-	wave.sample_rate = 44100;
-	wave.avg_sample_rate = 44100 * 1;
+	wave.sample_rate = FREQUENCY;
+	wave.avg_sample_rate = FREQUENCY * 1;
 	wave.align = 2;
 	wave.sample_size = 16;
 
+//	s_pcm = (short int *)malloc(strlen(phone_num) * 8000 * dial_time);
+//	if (s_pcm == NULL)
+//		return;
+
+//	dial_num(s_pcm, dial_time, phone_num);
 
 	printf("calculating omega\n");
 	calc_omega(omega, N);
@@ -326,26 +443,25 @@ int main(void)
 
 
 	printf("generating samples\n");
+	generate_samples(&x[0], 0, NUM_SAMPLES);
 
-	printf("format\t\t%d\nchannels\t%d\nsampleRate\t%d\nsampleSize\t%d\n", wave.format, wave.channels, wave.sample_rate, wave.sample_size);
 	for(i = 0; i < NUM_SAMPLES && NUM_SAMPLES - i > 30; i += 30)
 	{
-		generate_samples(&x[0], i, 30);
-
-
-//		printf("filter %d\n", i);
-		filter(&y[0], &y[30], &x[0], &h[0], &m[0]);
-		for(j = 0; j < 30; j++)
-		{
-			//float [-1.0,1.0] -> pcm [0,65535]
-			x_pcm[j] = (unsigned short int)(y[j] * 32767 + 32767);
-		}
-		play_wave(&wave, (char *)x_pcm, 30);
-		temp = x_pcm;
-		x_pcm = x_old;
-		x_old = temp;
-
+		filter(&y[i], &y[i+30], &x[i], &h[0], &m[0]);
 	}
+	
+	for(i = 0; i < NUM_SAMPLES; i++)
+	{
+		//float [-1.0,1.0] -> pcm [0,65535]
+		x_pcm[i] = (short int)(x[i] * 32767);
+		y_pcm[i] = (short int)(y[i] * 32767);
+	}
+
+	printf("format\t\t%d\nchannels\t%d\nsampleRate\t%d\nsampleSize\t%d\n", wave.format, wave.channels, wave.sample_rate, wave.sample_size);
+	printf("Unfiltered\n");
+	play_wave(&wave, (char *)x_pcm, NUM_SAMPLES);
+	printf("Filtered\n");
+	play_wave(&wave, (char *)y_pcm, NUM_SAMPLES);
 	
 	return 0;
 }
