@@ -19,7 +19,6 @@
 #define N 16
 #define M 7
 #define SAMPLE_RATE 8000
-#define NUM_SAMPLES (SAMPLE_RATE * 10)
 
 
 typedef struct
@@ -272,7 +271,7 @@ int main(void)
 	char phone_num[] = "19408916875";
 	short int *s_pcm;
 	float dial_time = 0.8f;
-	int buffer_size = strlen(phone_num) * SAMPLE_RATE * dial_time;
+	int buffer_size = 2 * strlen(phone_num) * SAMPLE_RATE * dial_time;
 
 
 	wave.format = 1;
@@ -292,7 +291,7 @@ int main(void)
 	dial_num(s_pcm, phone_num, SAMPLE_RATE * dial_time);
 
 	printf("format\t\t%d\nchannels\t%d\nsampleRate\t%d\nsampleSize\t%d\n", wave.format, wave.channels, wave.sample_rate, wave.sample_size);
-	play_wave(&wave, (char *)s_pcm, NUM_SAMPLES);
+	play_wave(&wave, (char *)s_pcm, buffer_size);
 	free((void *)s_pcm);	
 	return 0;
 }
