@@ -1,13 +1,29 @@
+#include <windows.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+
+
 
 #define MY_PI 3.14159265359f
 #define N 16
 #define M 7
 
+#define NUM_SAMPLES (44100 * 30)
 
-float h[M] = {	0.0567, 0.1560, 0.2394, 0.2719, 0.2394, 0.1560, 0.0567 };
+float h[M] = {	0.0567f, 0.1560f, 0.2394f, 0.2719f, 0.2394f, 0.1560f, 0.0567f };
+
+
+typedef struct
+{
+	short	format;
+	short	channels;
+	int	sample_rate;
+	int	avg_sample_rate;
+	short	align;
+	short	sample_size;
+} wave_t;
 
 typedef struct
 {
@@ -65,8 +81,8 @@ void calc_omega(complex_t *omega, int n)
 	int size = (n-1) * (n-1) + 1;
 	complex_t value;
 
-	value.real = cos( -2.0 * MY_PI / n);
-	value.imag = sin( -2.0 * MY_PI / n);
+	value.real = (float)cos( -2.0 * MY_PI / n);
+	value.imag = (float)sin( -2.0 * MY_PI / n);
 
 	for(i = 0; i < size; i++)
 	{
@@ -92,14 +108,15 @@ void fill_matrix(complex_t *m, complex_t *omega, int n)
 }
 
 
-void generate_samples(float *x, int n)
+void generate_samples(float *x, int offset, int n)
 {
 	int i;
 
-	for(i = 1; i <= n; i++)
+	for(i = 1 + offset; i <= n + offset; i++)
 	{
 		float t = i * (2 * MY_PI / 8000);
-		x[i-1] = sin(2.0f * MY_PI * 800 * t) + sin(2.0f * MY_PI * 1400 * t);
+		x[i - offset - 1] = (float)sin(2.0f * MY_PI * 800 * t) / 2.0f + (float)sin(2.0f * MY_PI * 1400 * t) / 2.0f;
+
 //		printf("x[i] = %f\n", x[i-1]);
 	}
 }
@@ -141,7 +158,7 @@ void imatrix_multiply(complex_t *result, const complex_t *matrix, const complex_
 }
 
 
-void filter(float *x, float *h, complex_t *m)
+void filter(float *y, const float*overlap, const float *x, const float *h, const complex_t *m)
 {
 	complex_t x1[16], x2[16], x3[16];
 	complex_t y1[16], y2[16], y3[16];
@@ -198,33 +215,108 @@ void filter(float *x, float *h, complex_t *m)
 
 	for(i = 0; i < 36; i++)
 	{
-		if ( i < 10)
-			x[i] = x1[i].real;
+		if ( i < 6 )
+			y[i] = x1[i].real + overlap[i];
+		else if ( i < 10)
+			y[i] = x1[i].real;
 		else if (i < 16)
-			x[i] = x1[i].real + x2[i-10].real;
+			y[i] = x1[i].real + x2[i-10].real;
 		else if ( i < 20)
-			x[i] = x2[i-10].real;
+			y[i] = x2[i-10].real;
 		else if (i < 26)
-			x[i] = x2[i-10].real + x3[i-20].real;
+			y[i] = x2[i-10].real + x3[i-20].real;
 		else
-			x[i] = x3[i-20].real;
-	}
-
-
-	for(i = 0; i < 36; i++)
-	{
-		printf("x[%d] = %f\n", i, x[i]);
+			y[i] = x3[i-20].real;
 	}
 
 }
 
 
+char *get_file(char *filename)
+{
+	FILE	*file;
+	char	*buffer;
+	int	fSize, bRead;
+
+	file = fopen(filename, "rb");
+	if (file == NULL)
+		return 0;
+	fseek(file, 0, SEEK_END);
+	fSize = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	buffer = (char *) malloc( fSize * sizeof(char) + 1 );
+	bRead = fread(buffer, sizeof(char), fSize, file);
+	if (bRead != fSize)
+		return 0;
+	fclose(file);
+	buffer[fSize] = '\0';
+	return buffer;
+}
+
+int check_format(char *data, char *format)
+{
+	return memcmp(&data[8], format, 4);
+}
+
+char *find_chunk(char *chunk, char *id, int *length, char *end)
+{
+	while (chunk < end)
+	{
+		*length = *((int *)(chunk + 4));
+
+		if ( memcmp(chunk, id, 4) == 0 )
+			return chunk + 8;
+		else
+			chunk += *length + 8;
+	}
+	return NULL;
+}
+
+void play_wave(wave_t *format, char *data, int length)
+{
+	HWAVEOUT	hWaveOut;
+	WAVEHDR		wavehdr = {0};
+	WAVEFORMATEX	wformat;
+
+	wformat.wFormatTag = format->format;
+	wformat.nChannels = format->channels;
+	wformat.nSamplesPerSec = format->sample_rate;
+	wformat.nAvgBytesPerSec = format->avg_sample_rate;
+	wformat.nBlockAlign = format->align;
+	wformat.wBitsPerSample = format->sample_size;
+	wformat.cbSize = 0;
+
+	wavehdr.lpData = data;
+	wavehdr.dwBufferLength = length;
+
+	waveOutOpen(&hWaveOut, WAVE_MAPPER, &wformat, 0, 0, CALLBACK_NULL);
+	waveOutPrepareHeader(hWaveOut, &wavehdr, sizeof(WAVEHDR));
+
+	waveOutWrite(hWaveOut, &wavehdr, sizeof(WAVEHDR));
+	Sleep( 1000 * length / (format->sample_rate * format->channels * (format->sample_size / 8)) + 1);
+}
+
 int main(void)
 {
-	complex_t	omega[(N-1)*(N-1) + 1];
-	complex_t	m[N*N];
-	float		x[36] = {0};
-	int		i;
+	complex_t		omega[(N-1)*(N-1) + 1];
+	complex_t		m[N*N];
+	int			i, j;
+	wave_t			wave;
+	unsigned short int	x_pcm1[30];
+	unsigned short int	x_pcm2[30];
+	unsigned short int *x_pcm = x_pcm1;
+	unsigned short int *x_old = x_pcm2;
+	unsigned short int *temp;
+	float			x[30] = {0.0f};
+	float			y[36] = {0.0f};
+
+	wave.format = 1;
+	wave.channels = 1;
+	wave.sample_rate = 44100;
+	wave.avg_sample_rate = 44100 * 1;
+	wave.align = 2;
+	wave.sample_size = 16;
+
 
 	printf("calculating omega\n");
 	calc_omega(omega, N);
@@ -234,10 +326,26 @@ int main(void)
 
 
 	printf("generating samples\n");
-	generate_samples(&x[0], 30);
 
-	printf("filtering\n");
-	filter(&x[0], &h[0], &m[0]);
+	printf("format\t\t%d\nchannels\t%d\nsampleRate\t%d\nsampleSize\t%d\n", wave.format, wave.channels, wave.sample_rate, wave.sample_size);
+	for(i = 0; i < NUM_SAMPLES && NUM_SAMPLES - i > 30; i += 30)
+	{
+		generate_samples(&x[0], i, 30);
+
+
+//		printf("filter %d\n", i);
+		filter(&y[0], &y[30], &x[0], &h[0], &m[0]);
+		for(j = 0; j < 30; j++)
+		{
+			//float [-1.0,1.0] -> pcm [0,65535]
+			x_pcm[j] = (unsigned short int)(y[j] * 32767 + 32767);
+		}
+		play_wave(&wave, (char *)x_pcm, 30);
+		temp = x_pcm;
+		x_pcm = x_old;
+		x_old = temp;
+
+	}
 	
 	return 0;
 }
