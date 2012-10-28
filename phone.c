@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 
 
@@ -31,7 +32,7 @@ typedef struct
 	short	sample_size;
 } wave_t;
 
-void play_wave(wave_t *format, char *data, int length);
+int play_wave(wave_t *format, char *data, int length);
 
 void dial_digit(short int *s_pcm, char digit, int tone_size)
 {
@@ -173,7 +174,7 @@ char *find_chunk(char *chunk, char *id, int *length, char *end)
 
 
 #ifdef WIN32
-void play_wave(wave_t *format, char *data, int length)
+int play_wave(wave_t *format, char *data, int length)
 {
 	HWAVEOUT	hWaveOut;
 	WAVEHDR		wavehdr = {0};
@@ -196,9 +197,10 @@ void play_wave(wave_t *format, char *data, int length)
 	waveOutWrite(hWaveOut, &wavehdr, sizeof(WAVEHDR));
 	Sleep( 1000 * length / (format->sample_rate * format->channels * (format->sample_size / 8)));
 	waveOutClose(hWaveOut);
+	return 0;
 }
 #else
-void play_wave(wave_t *format, char *data, int length)
+int play_wave(wave_t *format, char *data, int length)
 {
 	int fd;
 	int arg;
@@ -208,7 +210,7 @@ void play_wave(wave_t *format, char *data, int length)
 	if (fd < 0)
 	{
 		perror("open of /dev/dsp failed");
-		exit(1);
+		return -1;
 	}
 
 	/* set sampling parameters */
@@ -217,12 +219,12 @@ void play_wave(wave_t *format, char *data, int length)
 	if (status == -1)
 	{
 		perror("SOUND_PCM_WRITE_BITS ioctl failed");
-		return;
+		return -1;
 	}
 	if (arg != format->sample_size)
 	{
 		perror("unable to set sample size");
-		return;
+		return -1;
 	}
 
 	arg = format->channels;
@@ -230,12 +232,12 @@ void play_wave(wave_t *format, char *data, int length)
 	if (status == -1)
 	{
 		perror("SOUND_PCM_WRITE_CHANNELS ioctl failed");
-		return;
+		return -1;
 	}
 	if (arg != format->channels)
 	{
 		perror("unable to set number of channels");
-		return;
+		return -1;
 	}
 
 	arg = format->sample_rate;
@@ -243,14 +245,14 @@ void play_wave(wave_t *format, char *data, int length)
 	if (status == -1)
 	{
 		perror("SOUND_PCM_WRITE_WRITE ioctl failed");
-		return;
+		return -1;
 	}
 
 	status = write(fd, data, length);
-	if (status != sizeof(buf))
+	if (status != length)
 	{
 		perror("write failed");
-		return;
+		return -1;
 	}
 
 	// wait for playback to complete
@@ -258,7 +260,7 @@ void play_wave(wave_t *format, char *data, int length)
 	if (status == -1)
 	{
 		perror("SOUND_PCM_SYNC ioctl failed");
-		return;
+		return -1;
 	}
 }
 #endif
@@ -291,6 +293,6 @@ int main(void)
 
 	printf("format\t\t%d\nchannels\t%d\nsampleRate\t%d\nsampleSize\t%d\n", wave.format, wave.channels, wave.sample_rate, wave.sample_size);
 	play_wave(&wave, (char *)s_pcm, NUM_SAMPLES);
-	
+	free((void *)s_pcm);	
 	return 0;
 }
