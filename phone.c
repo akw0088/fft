@@ -95,6 +95,21 @@ void dial_digit(short int *s_pcm, char digit, int tone_size)
 		f1 = 1447;
 		f2 = 941;
 	}
+	else if (digit == '.')
+	{
+		f1 = 0;
+		f2 = 0;
+	}
+	else if (digit == '_')
+	{
+		f1 = 350;
+		f2 = 440;
+	}
+	else if (digit == 'b')
+	{
+		f1 = 480;
+		f2 = 620;
+	}
 
 	for (i = 0; i < tone_size; i++)
 	{
@@ -125,7 +140,10 @@ void dial_num(short int *s_pcm, char *phone_num, int tone_size)
 		case '9':
 		case '*':
 		case '#':
+		case '.':
+		case '_':
 			dial_digit(&s_pcm[i * tone_size], phone_num[i], tone_size);
+			break;
 		}
 	}
 
@@ -268,9 +286,9 @@ int play_wave(wave_t *format, char *data, int length)
 int main(void)
 {
 	wave_t			wave;
-	char phone_num[] = "19408916875";
+	char phone_num[] = "___1.9.4.0.8.9.1.6.8.7.5";
 	short int *s_pcm;
-	float dial_time = 0.8f;
+	float dial_time = 0.08f;
 	int buffer_size = 2 * strlen(phone_num) * SAMPLE_RATE * dial_time;
 
 
