@@ -2,108 +2,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef struct
-{
-	short	format;
-	short	channels;
-	int	sample_rate;
-	int	avg_sample_rate;
-	short	align;
-	short	sample_size;
-} wave_t;
-
-char *get_file(char *filename)
-{
-	FILE	*file;
-	char	*buffer;
-	int	fSize, bRead;
-
-	file = fopen(filename, "rb");
-	if (file == NULL)
-		return 0;
-	fseek(file, 0, SEEK_END);
-	fSize = ftell(file);
-	fseek(file, 0, SEEK_SET);
-	buffer = (char *) malloc( fSize * sizeof(char) + 1 );
-	bRead = fread(buffer, sizeof(char), fSize, file);
-	if (bRead != fSize)
-		return 0;
-	fclose(file);
-	buffer[fSize] = '\0';
-	return buffer;
-}
-
-int check_format(char *data, char *format)
-{
-	return memcmp(&data[8], format, 4);
-}
-
-char *find_chunk(char *chunk, char *id, int *length, char *end)
-{
-	while (chunk < end)
-	{
-		*length = *((int *)(chunk + 4));
-
-		if ( memcmp(chunk, id, 4) == 0 )
-			return chunk + 8;
-		else
-			chunk += *length + 8;
-	}
-	return NULL;
-}
-
-void play_wave(wave_t *format, char *data, int length)
+void play_wave(WAVEFORMATEX *format, char *data, int length)
 {
 	HWAVEOUT	hWaveOut;
 	WAVEHDR		wavehdr = {0};
-	WAVEFORMATEX	wformat;
-
-	wformat.wFormatTag = format->format;
-	wformat.nChannels = format->channels;
-	wformat.nSamplesPerSec = format->sample_rate;
-	wformat.nAvgBytesPerSec = format->avg_sample_rate;
-	wformat.nBlockAlign = format->align;
-	wformat.wBitsPerSample = format->sample_size;
-	wformat.cbSize = 0;
 
 	wavehdr.lpData = data;
 	wavehdr.dwBufferLength = length;
 
-	waveOutOpen(&hWaveOut, WAVE_MAPPER, &wformat, 0, 0, CALLBACK_NULL);
+	waveOutOpen(&hWaveOut, WAVE_MAPPER, format, 0, 0, CALLBACK_NULL);
 	waveOutPrepareHeader(hWaveOut, &wavehdr, sizeof(WAVEHDR));
 	waveOutWrite(hWaveOut, &wavehdr, sizeof(WAVEHDR));
-	Sleep( 1000 * length / (format->sample_rate * format->channels * (format->sample_size / 8)) );
+	Sleep( 1000 * length / (format->nSamplesPerSec * format->nChannels * (format->wBitsPerSample / 8)) );
 }
 
 
-int get_wave(wave_t *format, char *data, int length)
+int get_wave(WAVEFORMATEX *format, char *data, int length)
 {
 	HWAVEIN		hwavein;
-	WAVEFORMATEX	wformat;
 	WAVEHDR		wavehdr = {0};
 
-	format->format = WAVE_FORMAT_PCM;
-	format->channels = 1;
-	format->sample_rate = 44100;
-	format->avg_sample_rate = 44100 * 2;
-	format->align = 2;
-	format->sample_size = 16;
-
-	wformat.wFormatTag = format->format;
-	wformat.nChannels = format->channels;
-	wformat.nSamplesPerSec = format->sample_rate;
-	wformat.nAvgBytesPerSec = format->avg_sample_rate;
-	wformat.nBlockAlign = format->align;
-	wformat.wBitsPerSample = format->sample_size;
-	wformat.cbSize = 0;
-
-
+	format->wFormatTag = WAVE_FORMAT_PCM;
+	format->nChannels = 1;
+	format->nSamplesPerSec = 44100;
+	format->nAvgBytesPerSec = 44100 * 2;
+	format->nBlockAlign = 2;
+	format->wBitsPerSample = 16;
+	format->cbSize = 0;
 
 	wavehdr.lpData = data;
 	wavehdr.dwBufferLength = length;
 
 
-	if ( waveInOpen(&hwavein, WAVE_MAPPER, &wformat, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR)
+	if ( waveInOpen(&hwavein, WAVE_MAPPER, format, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR)
 	{
 		printf("waveInOpen failed\n");
 		return -1;
@@ -126,7 +57,6 @@ int get_wave(wave_t *format, char *data, int length)
 		Sleep(1000);
 
 	waveInReset(hwavein);
-	waveInUnprepareHeader(hwavein, &wavehdr, sizeof(WAVEHDR));
 	waveInClose(hwavein);
 	return 0;
 }
@@ -156,19 +86,27 @@ void ProcessBuffer(short int *data, int length)
 }
 
 
+
+#define LENGTH 4096
 int stream_wave()
 {
-	int length = 44100;
-	char data1[44100];
-	char data2[44100];
-	char data3[44100];
+	char data1[LENGTH];
+	char data2[LENGTH];
+	char data3[LENGTH];
 
 	HWAVEOUT	hWaveOut;
-	WAVEHDR		wavehdr1 = {0};
-	WAVEHDR		wavehdr2 = {0};
-	WAVEHDR		wavehdr3 = {0};
+	HWAVEIN		hWaveIn;
+
+	WAVEHDR		wavehdr1_in = {0};
+	WAVEHDR		wavehdr1_out = {0};
+
+	WAVEHDR		wavehdr2_in = {0};
+	WAVEHDR		wavehdr2_out = {0};
+
+	WAVEHDR		wavehdr3_in = {0};
+	WAVEHDR		wavehdr3_out = {0};
+
 	WAVEFORMATEX	wformat;
-	HWAVEIN		hwavein;
 
 	wformat.wFormatTag = WAVE_FORMAT_PCM;
 	wformat.nChannels = 1;
@@ -178,126 +116,122 @@ int stream_wave()
 	wformat.wBitsPerSample = 16;
 	wformat.cbSize = 0;
 
-	wavehdr1.lpData = data1;
-	wavehdr1.dwBufferLength = length;
-	wavehdr2.lpData = data2;
-	wavehdr2.dwBufferLength = length;
-	wavehdr3.lpData = data3;
-	wavehdr3.dwBufferLength = length;
+	wavehdr1_in.lpData = data1;
+	wavehdr1_out.lpData = data1;
+	wavehdr1_in.dwBufferLength = LENGTH;
+	wavehdr1_out.dwBufferLength = LENGTH;
+
+	wavehdr2_in.lpData = data2;
+	wavehdr2_out.lpData = data2;
+	wavehdr2_in.dwBufferLength = LENGTH;
+	wavehdr2_out.dwBufferLength = LENGTH;
 
 
-	if ( waveInOpen(&hwavein, WAVE_MAPPER, &wformat, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR)
+	wavehdr3_in.lpData = data3;
+	wavehdr3_out.lpData = data3;
+	wavehdr3_in.dwBufferLength = LENGTH;
+	wavehdr3_out.dwBufferLength = LENGTH;
+
+	if ( waveInOpen(&hWaveIn, WAVE_MAPPER, &wformat, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR)
 	{
 		printf("waveInOpen failed\n");
 		return -1;
 	}
 
+	if ( waveInPrepareHeader(hWaveIn, &wavehdr1_in, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
+	{
+		printf("waveInPrepareHeader failed\n");
+		return -1;
+	}
+	if ( waveInPrepareHeader(hWaveIn, &wavehdr2_in, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
+	{
+		printf("waveInPrepareHeader failed\n");
+		return -1;
+	}
+	if ( waveInPrepareHeader(hWaveIn, &wavehdr3_in, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
+	{
+		printf("waveInPrepareHeader failed\n");
+		return -1;
+	}
+
 	waveOutOpen(&hWaveOut, WAVE_MAPPER, &wformat, 0, 0, CALLBACK_NULL);
 
+	if ( waveOutPrepareHeader(hWaveOut, &wavehdr1_out, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
+	{
+		printf("waveOutPrepareHeader failed\n");
+		return -1;
+	}
 
+	if ( waveOutPrepareHeader(hWaveOut, &wavehdr2_out, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
+	{
+		printf("waveOutPrepareHeader failed\n");
+		return -1;
+	}
+
+	if ( waveOutPrepareHeader(hWaveOut, &wavehdr3_out, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
+	{
+		printf("waveOutPrepareHeader failed\n");
+		return -1;
+	}
+
+	if ( waveInAddBuffer(hWaveIn, &wavehdr1_in, LENGTH) != MMSYSERR_NOERROR)
+	{
+		printf("waveInAddBuffer failed\n");
+		return -1;
+	}
+	waveInStart(hWaveIn);
 	while (1)
 	{
-		// Get buffer one
-		if ( waveInPrepareHeader(hwavein, &wavehdr1, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
-		{
-			printf("waveInPrepareHeader failed\n");
-			return -1;
-		}
-	
-		if ( waveInAddBuffer(hwavein, &wavehdr1, length) != MMSYSERR_NOERROR)
+
+
+		if ( waveInAddBuffer(hWaveIn, &wavehdr2_in, LENGTH) != MMSYSERR_NOERROR)
 		{
 			printf("waveInAddBuffer failed\n");
 			return -1;
 		}
-	
-		waveInStart(hwavein);
 
-		Sleep( 1000 * length / (wformat.nSamplesPerSec * wformat.nChannels * (wformat.nSamplesPerSec / 8)) );
-		while ( (wavehdr1.dwFlags & WHDR_DONE) == 0)
-			Sleep(10);
+//		Sleep( 1000 * LENGTH / (wformat.nSamplesPerSec * wformat.nChannels * (wformat.nSamplesPerSec / 8)) );
+		while ( (wavehdr1_in.dwFlags & WHDR_DONE) == 0)
+			Sleep(0);
 
-		waveInUnprepareHeader(hwavein, &wavehdr1, sizeof(WAVEHDR));
-	
-	
-		waveOutUnprepareHeader(hWaveOut, &wavehdr3, sizeof(WAVEHDR));
+		ProcessBuffer((short int *)data1, LENGTH / 2);
+		waveOutWrite(hWaveOut, &wavehdr1_out, sizeof(WAVEHDR));
 
-		ProcessBuffer((short int *)data1, length / 2);
+//		Sleep( 1000 * LENGTH / (wformat.nSamplesPerSec * wformat.nChannels * (wformat.nSamplesPerSec / 8)) );
 
-		if ( waveOutPrepareHeader(hWaveOut, &wavehdr1, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
-		{
-			printf("waveOutPrepareHeader failed\n");
-			return -1;
-		}
-
-		waveOutWrite(hWaveOut, &wavehdr1, sizeof(WAVEHDR));
-
-		// Get buffer two
-		if ( waveInPrepareHeader(hwavein, &wavehdr2, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
-		{
-			printf("waveInPrepareHeader failed\n");
-			return -1;
-		}
-	
-		if ( waveInAddBuffer(hwavein, &wavehdr2, length) != MMSYSERR_NOERROR)
+		if ( waveInAddBuffer(hWaveIn, &wavehdr3_in, LENGTH) != MMSYSERR_NOERROR)
 		{
 			printf("waveInAddBuffer failed\n");
 			return -1;
 		}
-	
-		waveInStart(hwavein);
-		Sleep( 1000 * length / (wformat.nSamplesPerSec * wformat.nChannels * (wformat.nSamplesPerSec / 8)) );
-		while ( (wavehdr2.dwFlags & WHDR_DONE) == 0)
-			Sleep(10);
-		waveInUnprepareHeader(hwavein, &wavehdr2, sizeof(WAVEHDR));
-	
-		waveOutUnprepareHeader(hWaveOut, &wavehdr1, sizeof(WAVEHDR));
+
+		while ( (wavehdr2_in.dwFlags & WHDR_DONE) == 0)
+			Sleep(0);
 
 
-		ProcessBuffer((short int *)data2, length / 2);
+		ProcessBuffer((short int *)data2, LENGTH / 2);
+		waveOutWrite(hWaveOut, &wavehdr2_out, sizeof(WAVEHDR));
 
-		if (waveOutPrepareHeader(hWaveOut, &wavehdr2, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
-		{
-			printf("waveOutPrepareHeader failed\n");
-			return -1;
-		}
-		waveOutWrite(hWaveOut, &wavehdr2, sizeof(WAVEHDR));
-
-		// Get buffer three
-		if ( waveInPrepareHeader(hwavein, &wavehdr3, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
-		{
-			printf("waveInPrepareHeader failed\n");
-			return -1;
-		}
-	
-		if ( waveInAddBuffer(hwavein, &wavehdr3, length) != MMSYSERR_NOERROR)
+//		Sleep( 1000 * LENGTH / (wformat.nSamplesPerSec * wformat.nChannels * (wformat.nSamplesPerSec / 8)) );
+		if ( waveInAddBuffer(hWaveIn, &wavehdr1_in, LENGTH) != MMSYSERR_NOERROR)
 		{
 			printf("waveInAddBuffer failed\n");
 			return -1;
 		}
-	
-		waveInStart(hwavein);
-		Sleep( 1000 * length / (wformat.nSamplesPerSec * wformat.nChannels * (wformat.nSamplesPerSec / 8)) );
-		while ( (wavehdr3.dwFlags & WHDR_DONE) == 0)
-			Sleep(10);
-		waveInUnprepareHeader(hwavein, &wavehdr3, sizeof(WAVEHDR));
-	
-		waveOutUnprepareHeader(hWaveOut, &wavehdr2, sizeof(WAVEHDR));
 
-		ProcessBuffer((short int *)data3, length / 2);
+		while ( (wavehdr3_in.dwFlags & WHDR_DONE) == 0)
+			Sleep(0);
 
-		if (waveOutPrepareHeader(hWaveOut, &wavehdr3, sizeof(WAVEHDR)) != MMSYSERR_NOERROR)
-		{
-			printf("waveOutPrepareHeader failed\n");
-			return -1;
-		}
-		waveOutWrite(hWaveOut, &wavehdr3, sizeof(WAVEHDR));
+		ProcessBuffer((short int *)data3, LENGTH / 2);
+		waveOutWrite(hWaveOut, &wavehdr3_out, sizeof(WAVEHDR));
 
 	}
 
 
-//	waveInReset(hwavein);
-//	waveInUnprepareHeader(hwavein, &wavehdr, sizeof(WAVEHDR));
-//	waveInClose(hwavein);
+	waveInReset(hWaveIn);
+	waveInClose(hWaveIn);
+	waveOutReset(hWaveOut);
+	waveOutClose(hWaveOut);
 	return 0;
 }
 
