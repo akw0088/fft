@@ -2,7 +2,7 @@
 #include <math.h>
 #include <process.h>
 
-#define NUM    4096
+#define NUM    2048
 #define TWOPI  (2 * 3.14159)
 
 LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
@@ -96,7 +96,7 @@ int distortion(short int *data, int length, float gain, int clip)
 	return 0;
 }
 
-void ProcessBuffer(int index, short int *data, int length)
+void ProcessBuffer(short int *data, int length)
 {
 	int i;
 
@@ -104,12 +104,7 @@ void ProcessBuffer(int index, short int *data, int length)
 	for (i = 0; i < NUM; i++)
 	{
 		apt[i].x = i * cxClient / NUM;
-		if (index == 1)
-			apt[i].y = (int) (cyClient / 2 * (1 - data1[i]));
-		else if (index == 2)
-			apt[i].y = (int) (cyClient / 2 * (1 - data2[i]));
-		else
-			apt[i].y = (int) (cyClient / 2 * (1 - data3[i]));
+		apt[i].y = (int) (cyClient / 2 * (1.0 - data[i] / 32767.0));
 	}
 	LeaveCriticalSection(&critical);
 
@@ -219,7 +214,7 @@ int stream_wave()
 		while ( (wavehdr1_in.dwFlags & WHDR_DONE) == 0)
 			Sleep(0);
 
-		ProcessBuffer(1, (short int *)data1, LENGTH / 2);
+		ProcessBuffer((short int *)data1, LENGTH / 2);
 		waveOutWrite(hWaveOut, &wavehdr1_out, sizeof(WAVEHDR));
 
 //		Sleep( 1000 * LENGTH / (wformat.nSamplesPerSec * wformat.nChannels * (wformat.nSamplesPerSec / 8)) );
@@ -234,7 +229,7 @@ int stream_wave()
 			Sleep(0);
 
 
-		ProcessBuffer(2, (short int *)data2, LENGTH / 2);
+		ProcessBuffer((short int *)data2, LENGTH / 2);
 		waveOutWrite(hWaveOut, &wavehdr2_out, sizeof(WAVEHDR));
 
 //		Sleep( 1000 * LENGTH / (wformat.nSamplesPerSec * wformat.nChannels * (wformat.nSamplesPerSec / 8)) );
@@ -247,7 +242,7 @@ int stream_wave()
 		while ( (wavehdr3_in.dwFlags & WHDR_DONE) == 0)
 			Sleep(0);
 
-		ProcessBuffer(3, (short int *)data3, LENGTH / 2);
+		ProcessBuffer((short int *)data3, LENGTH / 2);
 		waveOutWrite(hWaveOut, &wavehdr3_out, sizeof(WAVEHDR));
 
 	}
@@ -316,6 +311,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	static HPEN	green_pen;
 	static HGDIOBJ	old_pen;
 	static HANDLE	hThread;
+	static RECT	rect = {0, 0, 1, 1};
 	HDC		hdc;
 	int		i;
 	PAINTSTRUCT	ps;
@@ -327,12 +323,18 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 		green_pen = CreatePen(PS_SOLID, 1, RGB(0,255,0));
 		hThread = (HANDLE)_beginthreadex(0, 0, stream_thread, 0, 0, 0);
 		InitializeCriticalSection(&critical);
+		SetTimer(hwnd, 0, 1, NULL);
 		return 0;
 	case WM_SIZE:
 		cxClient = LOWORD(lParam);
 		cyClient = HIWORD(lParam);
+		rect.right = cxClient;
+		rect.bottom = cyClient;
+		
 		return 0;
-	     
+	case WM_TIMER:
+		InvalidateRect(hwnd, &rect, TRUE);
+		return 0;
 	case WM_PAINT:
 		hdc = BeginPaint (hwnd, &ps);
 		old_pen = SelectObject(hdc, green_pen);
