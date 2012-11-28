@@ -18,6 +18,12 @@ char data1[LENGTH];
 char data2[LENGTH];
 char data3[LENGTH];
 
+
+char echo_buffer[4 * LENGTH] = {0};
+int echo_index = 0;
+
+int mode = 0;
+
 void play_wave(WAVEFORMATEX *format, char *data, int length)
 {
 	HWAVEOUT	hWaveOut;
@@ -96,6 +102,28 @@ int distortion(short int *data, int length, float gain, int clip)
 	return 0;
 }
 
+int echo(short int *data, int length, float gain, int delay)
+{
+	int i;
+	int value;
+
+	for(i = 0; i < length; i++)
+	{
+		echo_buffer[echo_index++] = data[i];
+		if (echo_index >= 4 * LENGTH)
+			echo_index = 0;
+
+		if (i + delay < 4 * LENGTH)
+			data[i] = data[i] + gain * echo_buffer[echo_index + delay];
+		else
+		{
+			data[i] = data[i] + gain * echo_buffer[echo_index + delay - 4 * LENGTH - 1];
+		}
+	}
+
+	return 0;
+}
+
 void ProcessBuffer(short int *data, int length)
 {
 	int i;
@@ -108,8 +136,11 @@ void ProcessBuffer(short int *data, int length)
 	}
 	LeaveCriticalSection(&critical);
 
-
-//	distortion(data, length, 100.0, 24575);
+	if (mode == 1)
+		distortion(data, length, 100.0, 24575);
+	if (mode == 2)
+		echo(data, length, 0.90, 1000);
+		
 }
 
 int stream_wave()
@@ -307,7 +338,9 @@ unsigned int __stdcall stream_thread(void *arg)
 
 LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	
+	static HWND	button_normal;
+	static HWND	button_distortion;
+	static HWND	button_echo;
 	static HPEN	green_pen;
 	static HGDIOBJ	old_pen;
 	static HANDLE	hThread;
@@ -322,6 +355,31 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_CREATE:
 		green_pen = CreatePen(PS_SOLID, 1, RGB(0,255,0));
 		hThread = (HANDLE)_beginthreadex(0, 0, stream_thread, 0, 0, 0);
+		button_normal = CreateWindow ( TEXT("button"), 
+			"No Effect",
+			WS_CHILD | WS_VISIBLE | BS_RADIOBUTTON,
+			10, 10 * (1 + 2 * 0),
+			20 * 10, 7 * 10 / 4,
+			hwnd, 0,
+			((LPCREATESTRUCT) lParam)->hInstance, NULL) ;
+		button_distortion = CreateWindow ( TEXT("button"), 
+			"Distortion",
+			WS_CHILD | WS_VISIBLE | BS_RADIOBUTTON,
+			10, 10 * (1 + 2 * 1),
+			20 * 10, 7 * 10 / 4,
+			hwnd, 0,
+			((LPCREATESTRUCT) lParam)->hInstance, NULL) ;
+		button_echo = CreateWindow ( TEXT("button"), 
+			"Echo",
+			WS_CHILD | WS_VISIBLE | BS_RADIOBUTTON,
+			10, 10 * (1 + 2 * 2),
+			20 * 10, 7 * 10 / 4,
+			hwnd, 0,
+			((LPCREATESTRUCT) lParam)->hInstance, NULL) ;
+		SendMessage(button_normal, BM_SETCHECK, 1, 0);
+		SendMessage(button_distortion, BM_SETCHECK, 0, 0);
+		SendMessage(button_echo, BM_SETCHECK, 0, 0);
+
 		InitializeCriticalSection(&critical);
 		SetTimer(hwnd, 0, 1, NULL);
 		return 0;
@@ -330,8 +388,36 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 		cyClient = HIWORD(lParam);
 		rect.right = cxClient;
 		rect.bottom = cyClient;
-		
 		return 0;
+	case WM_COMMAND:
+	{
+		int id = LOWORD(wParam);	// Child window ID 
+		int code = HIWORD(wParam);	// Notification code 
+		HWND handle = lParam;
+
+		if (handle == button_normal)
+		{
+			SendMessage(button_normal, BM_SETCHECK, 1, 0);
+			SendMessage(button_distortion, BM_SETCHECK, 0, 0);
+			SendMessage(button_echo, BM_SETCHECK, 0, 0);
+			mode = 0;
+		}
+		else if (handle == button_distortion)
+		{
+			SendMessage(button_normal, BM_SETCHECK, 0, 0);
+			SendMessage(button_distortion, BM_SETCHECK, 1, 0);
+			SendMessage(button_echo, BM_SETCHECK, 0, 0);
+			mode = 1;
+		}
+		else
+		{
+			SendMessage(button_normal, BM_SETCHECK, 0, 0);
+			SendMessage(button_distortion, BM_SETCHECK, 0, 0);
+			SendMessage(button_echo, BM_SETCHECK, 1, 0);
+			mode = 2;
+		}
+		return 0;
+	}
 	case WM_TIMER:
 		InvalidateRect(hwnd, &rect, TRUE);
 		return 0;
