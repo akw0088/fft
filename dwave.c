@@ -11,6 +11,8 @@ POINT		apt[NUM];
 int		cxClient = 1;
 int		cyClient = 1;
 
+CRITICAL_SECTION critical;
+
 #define LENGTH 4096
 char data1[LENGTH];
 char data2[LENGTH];
@@ -98,6 +100,7 @@ void ProcessBuffer(int index, short int *data, int length)
 {
 	int i;
 
+	EnterCriticalSection(&critical);
 	for (i = 0; i < NUM; i++)
 	{
 		apt[i].x = i * cxClient / NUM;
@@ -108,6 +111,7 @@ void ProcessBuffer(int index, short int *data, int length)
 		else
 			apt[i].y = (int) (cyClient / 2 * (1 - data3[i]));
 	}
+	LeaveCriticalSection(&critical);
 
 
 //	distortion(data, length, 100.0, 24575);
@@ -322,6 +326,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_CREATE:
 		green_pen = CreatePen(PS_SOLID, 1, RGB(0,255,0));
 		hThread = (HANDLE)_beginthreadex(0, 0, stream_thread, 0, 0, 0);
+		InitializeCriticalSection(&critical);
 		return 0;
 	case WM_SIZE:
 		cxClient = LOWORD(lParam);
@@ -336,7 +341,9 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 		MoveToEx (hdc, 0,        cyClient / 2, NULL);
 		LineTo   (hdc, cxClient, cyClient / 2);
 
+		EnterCriticalSection(&critical);
 		Polyline(hdc, apt, NUM);
+		LeaveCriticalSection(&critical);
 		SelectObject(hdc, old_pen);
 		EndPaint(hwnd, &ps);
 		return 0;
